@@ -1,30 +1,30 @@
 {
-    "name": "depo/pqueue",
-    "description": "PQueue is a minimalist PHP library for processing background messages using a single persistent CLI (managed via systemd) or periodic execution (via cron), covering 90% of use cases without external dependencies or complex worker management.",
-    "type": "library",
-    "license": "MPL-2.0",
-    "authors": [
-        {
-            "name": "F. Michel"
-        }
-    ],
-    "autoload": {
-        "psr-4": {
-            "Depo\\PQueue\\": "src",
-            "Test\\Depo\\PQueue\\": "tests"
-        }
-    },
-    "require": {
-        "php": ">=7.4",
-        "ext-sqlite3": "*",
-        "ext-json": "*",
-        "phpdevcommunity/michel-package-starter": "^1.0",
-        "psr/log": "^1.1|^2.0|^3.0",
-        "phpdevcommunity/php-console": "^1.0",
-        "phpdevcommunity/php-options-resolver": "^2.0",
-        "psr/container": "^2.0"
-    },
-    "require-dev": {
-        "depo/unitester": "^1.0.0"
+  "name": "depo/pqueue",
+  "description": "PQueue is a minimalist PHP library for processing background messages using a single persistent CLI (managed via systemd) or periodic execution (via cron), covering 90% of use cases without external dependencies or complex worker management.",
+  "type": "library",
+  "license": "MPL-2.0",
+  "authors": [
+    {
+      "name": "F. Michel"
     }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Depo\\PQueue\\": "src",
+      "Test\\Depo\\PQueue\\": "tests"
+    }
+  },
+  "require": {
+    "php": ">=7.4",
+    "ext-sqlite3": "*",
+    "ext-json": "*",
+    "psr/log": "^1.1|^2.0|^3.0",
+    "phpdevcommunity/michel-package-starter": "^1.0",
+    "phpdevcommunity/php-console": "^1.0",
+    "phpdevcommunity/php-options-resolver": "^2.0",
+    "psr/container": "^2.0"
+  },
+  "require-dev": {
+    "depo/unitester": "^1.0.0"
+  }
 }
