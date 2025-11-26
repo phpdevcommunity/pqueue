@@ -1,15 +1,16 @@
 <?php
 
-namespace PhpDevCommunity\PQueue\Transport;
+namespace Depo\PQueue\Transport;
 
-use PhpDevCommunity\PQueue\Transport\Message\TransportMessage;
+use Depo\PQueue\Transport\Message\Message;
 
 interface TransportInterface
 {
-    public function send(string $body, \DateTimeInterface $availableAt, bool $retry): void;
+    public function send(Envelope $message): void;
     public function getNextAvailableMessages(): iterable;
-    public function success(TransportMessage $message): void;
-    public function retry(TransportMessage $message, string $errorMessage, \DateTimeInterface $availableAt): void;
-    public function failed(TransportMessage $message, string $errorMessage): void;
+    public function success(Message $message): void;
+    public function retry(Message $message, string $errorMessage, \DateTimeInterface $availableAt): void;
+    public function failed(Message $message, string $errorMessage): void;
     public function supportMultiWorker(): bool;
+    public static function create(array $options): self;
 }

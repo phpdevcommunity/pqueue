@@ -1,10 +1,10 @@
 <?php
 
-namespace PhpDevCommunity\PQueue\Transport;
+namespace Depo\PQueue\Transport;
 
 use DateTimeInterface;
 use LogicException;
-use PhpDevCommunity\PQueue\Transport\Message\TransportMessage;
+use Depo\PQueue\Transport\Message\Message;
 use RuntimeException;
 use SQLite3;
 
@@ -56,49 +56,50 @@ class SQLiteTransport implements TransportInterface
         }
     }
 
-    public function send(string $body, ?DateTimeInterface $availableAt, bool $retry): void
+    public function send(Envelope $message): void
     {
-        $availableAtStr = $availableAt->format('Y-m-d H:i:s');
+        $availableAtStr = $message->getAvailableAt() ? $message->getAvailableAt()->format('Y-m-d H:i:s') : date('Y-m-d H:i:00');
         $stmt = $this->db->prepare('INSERT INTO pqueue_messages (body, retry, available_at) VALUES (:body, :retry, :availableAt)');
-        $stmt->bindValue(':body', $body, SQLITE3_TEXT);
-        $stmt->bindValue(':retry', $retry ? 1 : 0, SQLITE3_INTEGER);
+        $stmt->bindValue(':body', $message->getBody(), SQLITE3_TEXT);
+        $stmt->bindValue(':retry', $message->isRetry() ? 1 : 0, SQLITE3_INTEGER);
         $stmt->bindValue(':availableAt', $availableAtStr, SQLITE3_TEXT);
         $stmt->execute();
     }
 
     /**
-     * @return iterable<TransportMessage>
+     * @return iterable<Message>
      */
     public function getNextAvailableMessages(): iterable
     {
-        $stmt = $this->db->prepare(<<<SQL
-        SELECT id, body, retry, attempts FROM pqueue_messages
+        $stmt = $this->db->prepare(
+            <<<SQL
+        SELECT id, body, retry, attempts, available_at as availableAt, last_failure_at as lastFailureAt, error_message as errorMessage, status  FROM pqueue_messages
         WHERE (status = 'PENDING' OR status = 'RETRY') AND available_at <= datetime('now')
         ORDER BY id ASC
         SQL
         );
         $result = $stmt->execute();
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            yield new TransportMessage(
+            $envelope = Envelope::fromArray($row);
+            yield new Message(
                 $row['id'],
-                $row['body'],
-                (bool)$row['retry'],
-                (int)$row['attempts']
+                $envelope
             );
         }
     }
 
-    public function success(TransportMessage $message): void
+    public function success(Message $message): void
     {
         $stmt = $this->db->prepare("DELETE FROM pqueue_messages WHERE id = :id");
         $stmt->bindValue(':id', $message->getId(), SQLITE3_INTEGER);
         $stmt->execute();
     }
 
-    public function retry(TransportMessage $message, string $errorMessage, DateTimeInterface $availableAt): void
+    public function retry(Message $message, string $errorMessage, DateTimeInterface $availableAt): void
     {
         $availableAtStr = $availableAt->format('Y-m-d H:i:s');
-        $stmt = $this->db->prepare(<<<SQL
+        $stmt = $this->db->prepare(
+            <<<SQL
             UPDATE pqueue_messages
             SET attempts = attempts + 1,
                 status = 'RETRY',
@@ -114,9 +115,10 @@ class SQLiteTransport implements TransportInterface
         $stmt->execute();
     }
 
-    public function failed(TransportMessage $message, string $errorMessage): void
+    public function failed(Message $message, string $errorMessage): void
     {
-        $stmt = $this->db->prepare(<<<SQL
+        $stmt = $this->db->prepare(
+            <<<SQL
             UPDATE pqueue_messages
             SET attempts = attempts + 1,
                 status = 'FAILED',
@@ -133,5 +135,18 @@ class SQLiteTransport implements TransportInterface
     public function supportMultiWorker(): bool
     {
         return false;
+    }
+
+    public static function create(array $options): TransportInterface
+    {
+        if (!isset($options["db_path"])) {
+            throw new \LogicException('The "db_path" option must be set');
+        }
+
+        if (!is_string($options["db_path"])) {
+            throw new \LogicException('The "db_path" option must be a string');
+        }
+
+        return new SQLiteTransport($options["db_path"]);
     }
 }

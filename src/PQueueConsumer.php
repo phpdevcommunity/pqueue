@@ -1,10 +1,9 @@
 <?php
 
-namespace PhpDevCommunity\PQueue;
+namespace Depo\PQueue;
 
 final class PQueueConsumer
 {
-
     /** @var callable[] List of handlers for processing messages */
     private array $handlers = [];
 
@@ -13,11 +12,11 @@ final class PQueueConsumer
      */
     public function __construct(array $handlers)
     {
-        foreach ($handlers as $handler) {
+        foreach ($handlers as $payloadClass => $handler) {
             if (!is_object($handler)) {
                 throw new \InvalidArgumentException(
                     sprintf(
-                        'Worker::__construct: Handler must be an object, %s given',
+                        'PQueueConsumer: Handler must be an object, %s given',
                         gettype($handler)
                     )
                 );
@@ -25,32 +24,30 @@ final class PQueueConsumer
             if (!is_callable($handler)) {
                 throw new \InvalidArgumentException(
                     sprintf(
-                        'Worker::__construct: Handler object "%s" must implement an __invoke() method',
+                        'PQueueConsumer: Handler object "%s" must implement an __invoke() method',
                         get_class($handler)
                     )
                 );
             }
-            $this->handlers[] = $handler;
+            if (!class_exists($payloadClass)) {
+                throw new \InvalidArgumentException(
+                    sprintf('PQueueConsumer: Unknown payload class "%s"', $payloadClass)
+                );
+            }
+            $this->handlers[$payloadClass] = $handler;
         }
     }
 
     public function consume(object $payload)
     {
         $payloadClass = get_class($payload);
-        $handlerFound = false;
-        foreach ($this->handlers as $handler) {
-            if (get_class($handler) === sprintf("%sHandler", $payloadClass)) {
-                $handler($payload);
-                break;
-            }
-        }
-
-        if (!$handlerFound) {
+        if (!isset($this->handlers[$payloadClass])) {
             throw new \RuntimeException(sprintf(
-                'No handler found for payload of class "%s"',
+                'No handler found for payload of class "%s".',
                 $payloadClass
             ));
         }
+        $handler = $this->handlers[$payloadClass];
+        $handler($payload);
     }
-
 }

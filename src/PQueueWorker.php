@@ -1,17 +1,21 @@
 <?php
 
-namespace PhpDevCommunity\PQueue;
+namespace Depo\PQueue;
 
 use DateTimeImmutable;
-use PhpDevCommunity\PQueue\Serializer\MessageSerializer;
-use PhpDevCommunity\PQueue\Transport\Message\TransportMessage;
-use PhpDevCommunity\PQueue\Transport\TransportInterface;
+use Depo\PQueue\Serializer\MessageSerializer;
+use Depo\PQueue\Transport\Message\Message;
+use Depo\PQueue\Transport\TransportInterface;
+use PhpDevCommunity\Resolver\Option;
+use PhpDevCommunity\Resolver\OptionsResolver;
 use Throwable;
 
 final class PQueueWorker
 {
     private TransportInterface $transport;
     private PQueueConsumer $consumer;
+
+    private bool $stopWhenEmpty;
 
     /** @var int Time in milliseconds to sleep when no message is available */
     private int $idleSleepMs;
@@ -36,6 +40,8 @@ final class PQueueWorker
     /** @var int Delay in milliseconds between processing each message */
     private int $messageDelayMs;
 
+    private int $startTime;
+
     /**
      * @param TransportInterface $transport Transport implementation to pull messages from
      * @param PQueueConsumer $consumer
@@ -46,66 +52,79 @@ final class PQueueWorker
      *     retryBackoffMultiplier?: int,
      *     maxMemoryBytes?: int,
      *     maxRuntimeSeconds?: int,
-     *     messageDelayMs?: int
+     *     messageDelayMs?: int,
+     *     stopWhenEmpty?: bool
      * } $options Worker options
      */
     public function __construct(TransportInterface $transport, PQueueConsumer $consumer, array $options)
     {
+
         $this->transport = $transport;
         $this->consumer = $consumer;
 
+        $resolver = new OptionsResolver([
+            Option::bool('stopWhenEmpty')->setOptional(false),
+            Option::int('idleSleepMs')->setOptional(1000)->min(1),
+            Option::int('maxRetryAttempts')->setOptional(5)->min(0),
+            Option::int('initialRetryDelayMs')->setOptional(60000)->min(0),
+            Option::int('retryBackoffMultiplier')->setOptional(3)->min(1),
+            Option::int('maxMemory')->setOptional(100)->min(1),
+            Option::int('maxRuntimeSeconds')->setOptional(3600)->min(60),
+            Option::int('messageDelayMs')->setOptional(0)->min(0),
+        ]);
+        $optionsResolved = $resolver->resolve($options);
+
+
+        // Worker options
+        $this->stopWhenEmpty = $optionsResolved['stopWhenEmpty'];
+
         // Sleep / idle
-        $this->idleSleepMs = $options['idleSleepMs'] ?? 1000;
+        $this->idleSleepMs = $optionsResolved['idleSleepMs'];
 
         // Retry options
-        $this->initialRetryDelayMs = $options['initialRetryDelayMs'] ?? 60000; // 1 min
-        $this->maxRetryAttempts = $options['maxRetryAttempts'] ?? 5;
-        $this->retryBackoffMultiplier = $options['retryBackoffMultiplier'] ?? 3;
+        $this->initialRetryDelayMs = $optionsResolved['initialRetryDelayMs']; // 1 min
+        $this->maxRetryAttempts = $optionsResolved['maxRetryAttempts'];
+        $this->retryBackoffMultiplier = $optionsResolved['retryBackoffMultiplier'];
 
         // Resource / runtime limits
-        $this->maxMemoryBytes = ($options['maxMemoryBytes'] ?? 100) * 1024 * 1024; // 100 MB
-        $this->maxRuntimeSeconds = $options['maxRuntimeSeconds'] ?? 3600; // 1 hour
+        $this->maxMemoryBytes = $optionsResolved['maxMemory'] * 1024 * 1024;
+        $this->maxRuntimeSeconds = $optionsResolved['maxRuntimeSeconds'];
 
         // Message delay
-        $this->messageDelayMs = $options['messageDelayMs'] ?? 0; // default 0 ms
-        $this->validateOptions();
+        $this->messageDelayMs = $optionsResolved['messageDelayMs'];
     }
 
     public function run(): void
     {
-        $startTime = time();
+        $this->startTime = time();
 
         while (true) {
             $hasMessages = false;
             foreach ($this->transport->getNextAvailableMessages() as $msg) {
                 $hasMessages = true;
                 try {
-                    if (!$msg instanceof TransportMessage) {
+                    if (!$msg instanceof Message) {
                         throw new \RuntimeException(sprintf(
                             'Worker expected an instance of Message from transport "%s", got "%s".',
                             get_class($this->transport),
                             is_object($msg) ? get_class($msg) : gettype($msg)
                         ));
                     }
-                    $payload = MessageSerializer::unSerialize($msg->getBody());
+                    $payload = MessageSerializer::unSerialize($msg->getEnvelope()->getBody());
                     $this->consumer->consume($payload);
-                    $this->transport->success($msg->getId());
+                    $this->transport->success($msg);
                 } catch (Throwable $e) {
                     $attempts = $msg->getAttempts() + 1;
                     if ($msg->isRetry() && $attempts <= $this->maxRetryAttempts) {
                         $delay = $this->initialRetryDelayMs * pow($this->retryBackoffMultiplier, ($attempts - 1));
                         $availableAt = (new DateTimeImmutable())->modify("+{$delay} milliseconds");
-                        $this->transport->retry($msg->getId(), $e->getMessage(), $availableAt);
+                        $this->transport->retry($msg, $e->getMessage(), $availableAt);
                     } else {
-                        $this->transport->failed($msg->getId(), $e->getMessage());
+                        $this->transport->failed($msg, $e->getMessage());
                     }
                 }
 
-                if (memory_get_usage(true) > $this->maxMemoryBytes) {
-                    break;
-                }
-
-                if ((time() - $startTime) > $this->maxRuntimeSeconds) {
+                if ($this->needToBreak()) {
                     break;
                 }
 
@@ -114,42 +133,31 @@ final class PQueueWorker
                 }
             }
 
+            if ($this->needToBreak()) {
+                break;
+            }
+
             if (!$hasMessages) {
+                if ($this->stopWhenEmpty) {
+                    break;
+                }
                 usleep($this->idleSleepMs * 1000);
             }
         }
     }
 
-    private function validateOptions(): void
+
+
+    private function needToBreak(): bool
     {
-        foreach ([
-                     'idleSleepMs' => $this->idleSleepMs,
-                     'initialRetryDelayMs' => $this->initialRetryDelayMs,
-                     'retryBackoffMultiplier' => $this->retryBackoffMultiplier,
-                     'maxMemoryBytes' => $this->maxMemoryBytes,
-                     'maxRuntimeSeconds' => $this->maxRuntimeSeconds,
-                 ] as $name => $value) {
-            if ($value <= 0) {
-                throw new \InvalidArgumentException(sprintf(
-                    'Worker option "%s" must be greater than 0, %d given.',
-                    $name,
-                    $value
-                ));
-            }
+        if (memory_get_usage(true) > $this->maxMemoryBytes) {
+            return true;
         }
 
-        if ($this->maxRetryAttempts < 0) {
-            throw new \InvalidArgumentException(sprintf(
-                'Worker option "retryMax" must be >= 0, %d given.',
-                $this->maxRetryAttempts
-            ));
+        if ((time() - $this->startTime) > $this->maxRuntimeSeconds) {
+            return true;
         }
 
-        if ($this->messageDelayMs < 0) {
-            throw new \InvalidArgumentException(sprintf(
-                'Worker option "messageDelayMs" must be >= 0, %d given.',
-                $this->messageDelayMs
-            ));
-        }
+        return false;
     }
 }

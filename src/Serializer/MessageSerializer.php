@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpDevCommunity\PQueue\Serializer;
+namespace Depo\PQueue\Serializer;
 final class MessageSerializer
 {
     public static function serialize(object $message): string
