@@ -22,7 +22,7 @@
     "phpdevcommunity/michel-package-starter": "^1.0",
     "phpdevcommunity/php-console": "^1.0",
     "phpdevcommunity/php-options-resolver": "^2.0",
-    "psr/container": "^2.0"
+    "psr/container": "^1.1|^2.0"
   },
   "require-dev": {
     "depo/unitester": "^1.0.0"

@@ -8,30 +8,28 @@ use Depo\PQueue\HandlerResolver\HandlerResolverInterface;
 final class PQueueConsumerFactory
 {
     private HandlerResolverInterface $handlerResolver;
-    private array $handlerSources;
-    private ?string $handlerCacheDir;
+    private array $handlerMap;
 
+    /**
+     * @param HandlerResolverInterface $handlerResolver
+     * @param array $handlerMap Map of message classes to handler classes
+     */
     public function __construct(
         HandlerResolverInterface $handlerResolver,
-        array $handlerSources,
-        ?string $handlerCacheDir = null
+        array $handlerMap
     ) {
         $this->handlerResolver = $handlerResolver;
-        $this->handlerSources = $handlerSources;
-        $this->handlerCacheDir = $handlerCacheDir;
+        $this->handlerMap = $handlerMap;
     }
 
     public function createConsumer(): PQueueConsumer
     {
-        if (empty($this->handlerSources)) {
-            throw new LogicException('PQueueConsumerFactory requires at least one handler source.');
+        if (empty($this->handlerMap)) {
+            throw new LogicException('PQueueConsumerFactory requires at least one handler to be registered.');
         }
 
-        $finder = new PQueueHandlerFinder($this->handlerSources, $this->handlerCacheDir);
-        $handlerMap = $finder->find();
-
         $handlers = [];
-        foreach ($handlerMap as $messageClass => $handlerClass) {
+        foreach ($this->handlerMap as $messageClass => $handlerClass) {
             if (!$this->handlerResolver->hasHandler($handlerClass)) {
                 throw new LogicException(sprintf(
                     'Message handler "%s" was found by the finder, but it is not registered as a service in the container (or the resolver cannot find it).',

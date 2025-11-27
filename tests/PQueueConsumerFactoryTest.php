@@ -2,6 +2,7 @@
 
 namespace Test\Depo\PQueue;
 
+use Depo\PQueue\PQueueHandlerFinder;
 use Depo\UniTester\TestCase;
 use Depo\PQueue\HandlerResolver\ContainerHandlerResolver;
 use Depo\PQueue\HandlerResolver\HandlerResolverInterface;
@@ -93,7 +94,8 @@ class PQueueConsumerFactoryTest extends TestCase
         copy(__DIR__ . '/Extra/TestMessage.php', $sourceDir . '/TestMessage.php');
         copy(__DIR__ . '/Extra/TestMessageHandler.php', $sourceDir . '/TestMessageHandler.php');
 
-        $factory = new PQueueConsumerFactory($resolver, [$sourceDir]);
+        $finder  = new PQueueHandlerFinder([$sourceDir]);
+        $factory = new PQueueConsumerFactory($resolver, $finder->find());
 
         // Act
         $consumer = $factory->createConsumer();
@@ -111,6 +113,7 @@ class PQueueConsumerFactoryTest extends TestCase
         // Assert
         $this->expectException(LogicException::class, function () use ($resolver) {
             // Act
+
             $factory = new PQueueConsumerFactory($resolver, []); // This MUST throw LogicException
             $factory->createConsumer();
         });
@@ -130,7 +133,8 @@ class PQueueConsumerFactoryTest extends TestCase
         // Assert
         $this->expectException(LogicException::class, function () use ($resolver, $sourceDir) {
             // Act
-            $factory = new PQueueConsumerFactory($resolver, [$sourceDir]); // This MUST throw LogicException because the handler is not in the container
+            $finder  = new PQueueHandlerFinder([$sourceDir]);
+            $factory = new PQueueConsumerFactory($resolver, $finder->find()); // This MUST throw LogicException because the handler is not in the container
             $factory->createConsumer();
         });
     }
