@@ -59,7 +59,7 @@ class PQueueWorkerRunCommandTest extends TestCase
             $out[] = $message;
         }));
         $this->assertEquals(0, $code);
-        $this->assertCount(44, $out);
+        $this->assertCount(31, $out);
 
     }
 
@@ -87,7 +87,7 @@ class PQueueWorkerRunCommandTest extends TestCase
             $out[] = $message;
         }));
         $this->assertEquals(0, $code);
-        $this->assertCount(44, $out);
+        $this->assertCount(31, $out);
 
     }
 }

@@ -14,9 +14,6 @@ use LogicException;
 use Test\Depo\PQueue\Extra\TestMessage;
 use Test\Depo\PQueue\Extra\TestMessageHandler;
 
-// --- Mock Exception for PSR-11 ---
-class MockNotFoundException extends \RuntimeException implements NotFoundExceptionInterface {}
-
 class PQueueConsumerFactoryTest extends TestCase
 {
     private array $tempDirs = [];
@@ -49,7 +46,7 @@ class PQueueConsumerFactoryTest extends TestCase
             private array $services = [];
             public function get(string $id) {
                 if (!array_key_exists($id, $this->services)) { // Use array_key_exists for robustness
-                    throw new MockNotFoundException("Service $id not found.");
+                    throw new \Exception("Service $id not found.");
                 }
                 return $this->services[$id];
             }

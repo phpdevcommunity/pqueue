@@ -112,3 +112,24 @@ $worker->run();
 echo "Worker finished.\n";
 ```
 
+## Worker Callbacks
+
+You can hook into the worker lifecycle using the following methods:
+
+- `onConsume(callable $callback)`: Executed after a message is successfully consumed.
+- `onFailure(callable $callback)`: Executed when a message fails processing.
+- `onStop(callable $callback)`: Executed when the worker stops (due to memory limit, time limit, or empty queue).
+
+```php
+$worker->onConsume(function ($message) {
+    echo "Message processed!\n";
+});
+
+$worker->onFailure(function ($message, $exception) {
+    echo "Message failed: " . $exception->getMessage() . "\n";
+});
+
+$worker->onStop(function () {
+    echo "Worker stopped.\n";
+});
+```

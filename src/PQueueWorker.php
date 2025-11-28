@@ -39,8 +39,16 @@ final class PQueueWorker
 
     /** @var int Delay in milliseconds between processing each message */
     private int $messageDelayMs;
-
     private int $startTime;
+
+    /** @var callable[] */
+    private array $onConsumeCallbacks = [];
+
+    /** @var callable[] */
+    private array $onStopCallbacks = [];
+
+    /** @var callable[] */
+    private array $onFailureCallbacks = [];
 
     /**
      * @param TransportInterface $transport Transport implementation to pull messages from
@@ -94,6 +102,24 @@ final class PQueueWorker
         $this->messageDelayMs = $optionsResolved['messageDelayMs'];
     }
 
+    public function onConsume(callable $callback): self
+    {
+        $this->onConsumeCallbacks[] = $callback;
+        return $this;
+    }
+
+    public function onStop(callable $callback): self
+    {
+        $this->onStopCallbacks[] = $callback;
+        return $this;
+    }
+
+    public function onFailure(callable $callback): self
+    {
+        $this->onFailureCallbacks[] = $callback;
+        return $this;
+    }
+
     public function run(): void
     {
         $this->startTime = time();
@@ -113,6 +139,9 @@ final class PQueueWorker
                     $payload = MessageSerializer::unSerialize($msg->getEnvelope()->getBody());
                     $this->consumer->consume($payload);
                     $this->transport->success($msg);
+                    foreach ($this->onConsumeCallbacks as $callback) {
+                        $callback($msg);
+                    }
                 } catch (Throwable $e) {
                     $attempts = $msg->getAttempts() + 1;
                     if ($msg->isRetry() && $attempts <= $this->maxRetryAttempts) {
@@ -122,9 +151,13 @@ final class PQueueWorker
                     } else {
                         $this->transport->failed($msg, $e->getMessage());
                     }
+                    foreach ($this->onFailureCallbacks as $callback) {
+                        $callback($msg, $e);
+                    }
                 }
 
                 if ($this->needToBreak()) {
+                    $this->triggerStop();
                     break;
                 }
 
@@ -134,11 +167,13 @@ final class PQueueWorker
             }
 
             if ($this->needToBreak()) {
+                $this->triggerStop();
                 break;
             }
 
             if (!$hasMessages) {
                 if ($this->stopWhenEmpty) {
+                    $this->triggerStop();
                     break;
                 }
                 usleep($this->idleSleepMs * 1000);
@@ -159,5 +194,12 @@ final class PQueueWorker
         }
 
         return false;
+    }
+
+    private function triggerStop(): void
+    {
+        foreach ($this->onStopCallbacks as $callback) {
+            $callback();
+        }
     }
 }
